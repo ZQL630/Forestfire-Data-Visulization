@@ -1,0 +1,223 @@
+---
+title: "ForestFire_Project1"
+author: "Group 11"
+date: "2021/10/26"
+output: html_document
+---
+```{r}
+library(dplyr)
+library(tidyr)
+library("gridExtra")
+library(scales)
+library(ggplot2)
+```
+
+# Read Data
+```{r}
+library(readr)
+df <- read.csv("forestfires.csv")
+head(df)
+```
+
+# summary Data Set
+```{r}
+#find min, max and data type of each column 
+summary(df)
+
+# Min of area is 0 which means no fire happened 
+```
+
+# Clean Data Set
+```{r}
+# is there any missing value in the data set?
+sum(is.na(df))
+
+# clean data set, only display fire related data
+fire_data <- subset(df, area!=0)
+```
+
+
+# Correlation Scatter Plot
+```{r}
+library(corrplot)
+library(stringr)
+
+mydata <- fire_data
+
+# Convert month name and day name to Numeric
+mydata <- transform(mydata, month = str_to_title(month),day = str_to_title(day))
+day.abb <- c("Mon","Tue","Wed","Thu","Fri","Sat","Sun")
+mydata <- transform(mydata, month=match(month,month.abb),day=match(day,day.abb))
+
+
+mydata.cor = cor(mydata)
+corrplot(mydata.cor)
+
+# From the scatter plot below: 
+# DC and DMC, ISI and FFMC have strong positive perason correlation among each other
+# DC and DMC, ISI and FFMC have strong positive perason correlation with temperature
+# X and Y are also highly correlated with each other.
+# RH and temp has negative pearson correlation.
+```
+
+```{r}
+
+ggplot(mydata, aes(x=wind)) + 
+    geom_histogram(aes(y=..density..),  
+                   colour="black", fill="white") +
+    geom_density(alpha=.2, fill="#FF6666") + scale_x_continuous(breaks = pretty_breaks()) 
+
+# used histogram and density chart to present the influence of wind on fire the density chart is right skewed.
+# According to the histogram, most forest fire outbbreaked when the windspeed is 4.2km/h. There also exist many forest fire when the windspeed is 2.2
+
+```
+
+# Tree Map of monthly average temperature 
+```{r}
+library(ggplot2)
+library(treemapify)
+
+# Find relationship between monthly average temperature and fire area
+
+# only display temp and area, group by month
+dfTemp <- fire_data %>%
+  group_by(month) %>%
+  summarise(Temp = mean(temp), Area = sum(area))
+
+ggplot(dfTemp, aes(area = Area, fill = Temp, label = month)) +
+  geom_treemap() +
+  geom_treemap_text() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  ggtitle("The Fire Area for Monthly Tmeperature")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+# We decided to use tree map for the data visualization. We first is simply compute monthly average temperature as X axis, and set the sum of burned area each month as Y axis and then make the filter as the average temperature every month. The area of each element shows the size of burned area each month, which can be easily distinguished. From the graph, it is easily to find that the months with higher temperature tend to have larger burned area than others, especially August and September.
+
+
+```
+
+# Tree Map of season average temperature
+```{r}
+## The second option is to divide 12 months as four seasons. With each season's average temperature, the data will be easier to recognize.For example, the monthly result of July, August and September in the previous chart matches the summer and autumn part in this chart, which shows the largest burning area among seasons.
+library(forcats)
+
+dfSeason <- fire_data%>%
+  filter(area > 0)
+
+dfSeason$season <- rep("spring", length(dfSeason[,1]))
+
+for (i in 1:length(dfSeason[,1])) {
+    if (dfSeason$month[i] %in% c("feb","jan","dec")) 
+      dfSeason$season[i] <- "winter"
+    if (dfSeason$month[i] %in% c("oct","nov","sep")) 
+      dfSeason$season[i] <- "autumn"
+    if (dfSeason$month[i] %in% c("aug","jul","jun")) 
+      dfSeason$season[i] <- "summer"
+    }
+
+dfSeason$season <- as.factor(dfSeason$season)
+
+dfSe <- dfSeason %>%
+  group_by(season)%>%
+  summarise(Area=sum(area), Temp=mean(temp)) %>%
+  mutate(season= fct_relevel(season, "spring","summer","autumn","winter"))
+
+ggplot(data=dfSe, aes(x=season, y=Area)) +
+  geom_bar(stat="identity", fill="firebrick4") + ylab("Burned Area") + ggtitle("Burned area in four seasons")
+
+
+
+
+```
+
+# Pie chart of Relative Humidity
+```{r}
+
+df1 <- fire_data
+#Make a new column called Relative Humidity range to classify the data
+df1$RHrange <- rep("1", length(df1[,1]))
+
+# Seperate the data in four part: 15%-25% RH, 25%-50% RH, 50%-75% RH, >75% RH.
+for (i in 1:length(df1[,1])) {
+       if (df1$RH[i] <= 25)
+         df1$RHrange[i] <- "15%-25%"
+       else if (df1$RH[i] <= 50 && df1$RH[i] > 25)
+         df1$RHrange[i] <- "25%-50%"
+       else if (df1$RH[i] > 50 && df1$RH[i] <= 75)
+         df1$RHrange[i] <- "50%-75%"
+       else
+         df1$RHrange[i] <- ">75%"
+       }
+
+dfRH <- df1 %>%
+  group_by(RHrange) %>%
+  summarise(Area=sum(area))
+
+
+ggplot(dfRH, aes(x="", y=Area, fill=RHrange)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) + theme_void() +
+  geom_text(aes(label = Area, x=1.6), 
+            position = position_stack(vjust = 0.4))
+
+# From the pie chart below, it clearly shows when the RH between 25%-50%, the burned area is the largest. When the RH greater than 75%, the burned area is the smallest. The range between 25% and 50%, it's easily spread the fire in the forest.
+```
+
+# Heat Map
+```{r}
+# The fire frequency for different location
+
+library(scales)
+df_new <- fire_data %>%
+  group_by(X,Y) %>%
+  summarise(fire_count = n())
+
+x=df_new$X
+y=df_new$Y
+
+fire_freq = df_new$fire_count
+
+ggplot(df_new,aes(x,y,fill = fire_freq))+ geom_tile() + 
+  ggtitle("the relationship between x-y position and fire frequency") +
+  scale_fill_gradient2(low = "dodgerblue4",mid = "black",high = "red",midpoint = 15) +
+  geom_text(aes(label = fire_freq), color = "white", size = 4) +
+  scale_x_continuous(breaks = pretty_breaks()) +
+  scale_y_continuous(breaks = pretty_breaks()) 
+
+#We used heat map to illustration the relationship between the number of forest fire and positions.
+#On x axis use x-axis spatial coordinate , on y axis use y-axis spatial coordinate and fill by the value of fire number. According to the heat map, there are three positions((6.5),(8,6),(7,4)) that have more fire outbreaks than other locations.
+
+```
+
+
+# Box Plot of FFMC, DMC, DC, ISI
+```{r}
+
+# The relation between FFMC, DMC, DC and ISI. In order to find their relationship with the outbreak of forest fire.
+
+
+
+FFMC_graph <- fire_data %>% ggplot(aes(y=FFMC))+
+  geom_boxplot(fill='steelblue') +
+  coord_flip()
+
+DMC_graph <- ggplot(fire_data, aes(y=DMC)) + 
+  geom_boxplot(fill='palevioletred1') +
+  coord_flip() 
+
+DC_graph <- ggplot(fire_data, aes(y=DC)) + 
+  geom_boxplot(fill='mediumturquoise') +
+  coord_flip()
+
+ISI_graph <- ggplot(fire_data, aes(y=ISI)) + 
+  geom_boxplot(fill='lightsteelblue4') +
+  coord_flip()
+
+
+
+grid.arrange(FFMC_graph,DMC_graph,DC_graph,ISI_graph,ncol=2, nrow=2)
+
+
+# According to the boxplot, there tend to be more fire outbreak with higher DC—it is obviously left skewed and have high medium line.  FFMC is normally distributed.  The chart of ISI is slightly right skewed. The chart of DMC is normally distributed. 
+
+```

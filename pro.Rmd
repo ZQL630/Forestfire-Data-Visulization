@@ -1,0 +1,202 @@
+##read file
+```{r}
+library(readr)
+df <- read.csv("forestfires.csv")
+summary(df)
+```
+```{r}
+# correlations among all factors, find relationship between two factors
+
+mydata <- df %>% select(X, Y, FFMC, DMC, DC, ISI, temp, RH, wind, rain, area)
+mydata.cor = cor(mydata)
+
+corrplot(mydata.cor)
+
+# From the scatter plot below: 
+# DC and DMC, ISI and FFMC has strong positive relationship
+# positive relationship means both variable move in the same direction
+# RH and temp has negative relationship, which means both variable move in the opposite direction
+```
+##dataframe build
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(treemapify)
+## Monthly average temperature influence on burned area
+## In this graph, we tried to find the relation ship between temperature and forestfires burned area. We decided to use tree map to show the data. To define , we have two options. The first is simply compute monthly average temperature as X axis to show the sum of burned area each month in Y and make the filter as the average temperature every month. The area of each element shows the size of burned area each monthly which can be easily distinguished. From the graph, it is easily to find that the month with higher temperature have much more burned area(possibility of forest fire) than others, especially August and September.
+dfTemp <- df %>%
+  group_by(month)%>%
+  summarise(Temp = mean(temp),Area = sum(area))
+ggplot(dfTemp, aes(area = Area, fill = Temp, label = month)) +
+  geom_treemap() +
+  geom_treemap_text() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  ggtitle("Monthly temperature's influence to burned area")
+
+```
+##Season
+```{r}
+## The second option is to divide 12 months as four seasons. With each season's average temperature, the data will be easier to recognize. Obvious temperature and burned area difference can also help the graph show the data. Like monthly result, July, August and September matches summer and autoumn, this time zone is the high possibility to happen forestfire.
+library(forcats)
+dfSeason <- df%>%
+  filter(area > 0)
+dfSeason$season <- rep("spring", length(dfSeason[,1]))
+for (i in 1:length(dfSeason[,1]))
+  {
+    if (dfSeason$month[i] %in% c("feb","jan","dec")) 
+      dfSeason$season[i] <- "winter"
+    if (dfSeason$month[i] %in% c("oct","nov","sep")) 
+      dfSeason$season[i] <- "autoumn"
+    if (dfSeason$month[i] %in% c("aug","jul","jun")) 
+      dfSeason$season[i] <- "summer"
+  }
+dfSeason$season <- as.factor(dfSeason$season)
+dfSe <- dfSeason%>%
+  group_by(season)%>%
+  summarise(Area=sum(area), Temp=mean(temp))%>%
+  mutate(season= fct_relevel(season, "spring","summer","autoumn","winter"))
+# ggplot(dfSe, aes(area = Area, fill = Temp, label = season)) +
+#   geom_treemap() +
+#   geom_treemap_text(color="white") +
+#   scale_fill_gradient2(low = "blue", mid = "black", high = "firebrick3", midpoint = 0) +
+#   ggtitle("Seasonly temperature's influence to burned area")
+ggplot(data=dfSe, aes(x=season, y=Area)) +
+  geom_bar(stat="identity", fill="firebrick4") + ylab("Burned Area") + ggtitle("Burned area in four seasons")
+
+```
+
+##Wind and Rain
+```{r}
+## According to wind speed and rain in miniutes, the difference between different months seems to be huge. In this case we decided to use bar chart to compare average wind speed and average rain in minutes through month. By comparing them with the sum pf monthly burned area, it can be easily find that the relation between wind speed, rain in minutes and burned area do not have strong connection in monthly. 
+library(gridExtra)
+dfWind <- df%>%
+  group_by(month)%>%
+  summarise(Wind=mean(wind), Area=sum(area))
+Windgraph <- ggplot(data=dfWind, aes(x=month, y=Wind)) +
+  geom_bar(stat="identity", fill="white") + ylab("Average wind") + ggtitle("Wind and Rain influence")
+dfRain <- df%>%
+  group_by(month)%>%
+  summarise(Rain=mean(rain), Area=sum(area))
+Raingraph <- ggplot(data=dfRain, aes(x=month, y=Rain)) +
+  geom_bar(stat="identity", fill="steelblue") + ylab("Average rain")
+Areagraph <- ggplot(data=dfRain, aes(x=month, y=Area)) +
+  geom_bar(stat="identity", color="black", fill = "firebrick3") + ylab("Burned Area")
+grid.arrange(Windgraph, Raingraph, Areagraph, ncol=1, nrow=3) 
+```
+
+
+
+##Relative Humidity
+```{r}
+# install.packages("ggrepel")
+# install.packages("tidyverse")
+library(ggrepel)
+library(tidyverse)
+##For the relative humidity, we make a new column called Realtive Humidity range to classify the data. We search for information about RH, we found humidity have difference influence to foresfire in different range. Then we show each burned area over 0 in box plot. We seperate the data in four part: 15%-25% RH, 25%-50% RH, 50%-75% RH, >75% RH. From the search, the relative humidity over 75% is ought to impossible to happen forestfire. From the result, it is clearly showed that the humidity between 25%-50% have most forestfire. When the relative humidity is over than 75%, it has only 5 forestfire happen and the area is very small, just as the research stated.
+df1 <- df
+df1$RHrange <- rep("1", length(df1[,1]))
+for (i in 1:length(df1[,1]))
+     {
+       if (df1$RH[i] <= 25)
+         df1$RHrange[i] <- "15%-25%"
+       else if (df1$RH[i] <= 50 && df1$RH[i] > 25)
+         df1$RHrange[i] <- "25%-50%"
+       else if (df1$RH[i] > 50 && df1$RH[i] <= 75)
+         df1$RHrange[i] <- "50%-75%"
+       else
+         df1$RHrange[i] <- ">75%"
+}
+dfRH <- df1%>%
+  group_by(RHrange)%>%
+  summarise(Area = sum(area))
+# ggplot(dfRH, aes(dfRH$RHrange, dfRH$Area)) + geom_boxplot() + coord_trans(y = "sqrt") + 
+# labs(x = "Relative Humidity", y = "the burned area", title ="The influence of the range of relative humidity")
+ggplot(dfRH, aes(x="", y=Area, fill=RHrange)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) + theme_void() +
+  geom_text(aes(label = Area),
+            position = position_stack(vjust = 0.4))
+  
+  
+
+   
+```
+
+```{r}
+#Relationship between x-y position and fire number.
+#Using  the heat map to illustration the relationship between the number of forest fire and positions. On x axis use x-axis spatial coordinate , on y axis use y-axis spatial coordinate and fill by the value of fire number. According to the heat map, there are three positions((6.5),(8,6),(7,4)) are most likely to happen forest fire.
+df_new <- df%>%
+  filter(area!=0)%>%
+  group_by(X,Y) %>%
+  summarise(fire_count = n())
+x=df_new$X
+y=df_new$Y
+fire_number = df_new$fire_count
+ggplot(df_new,aes(x,y,fill = fire_number))+ geom_tile() + ggtitle("the relationship between x-y position and fire numbers") + scale_fill_gradient2(low = "black",mid = "firebrick4",high = "red",midpoint = 15)
+```
+
+```{r}
+library(RColorBrewer)
+library(corrplot)
+library(stringr)
+library(corrplot)
+library(Hmisc)
+knitr::opts_chunk$set(echo = TRUE)
+
+forest_fire<-read.csv(file = 'forestfires.csv')
+##Data Cleaning :
+#The first step should be changing month and day into numeric. However, the string in both column doesnot match the system abbbrevation. We used str_to_title to change the first letter to uppercase and matched month with month.abb thus change them into numbers. We also created a similiar day.abb to match the day column. Then we cleaned the data through using filter to delete the data where buring area=0.
+forest_fire<-transform(forest_fire, month = str_to_title(month),day = str_to_title(day))
+day.abb<-c("Mon","Tue","Wed","Thu","Fri","Sat","Sun")
+forest_fire<-transform(forest_fire, month=match(month,month.abb),day=match(day,day.abb))
+forest_fire<-forest_fire%>%
+  filter(forest_fire$area !=0)
+```
+
+
+##Relationship between fire outbreak and 4 factors:
+
+Through our study of the data, we gained interest in the relation between FFMC, DMC, DC and ISI. In order to find their relationship with the outbreak of forest fire, we built several boxplot to see the trend.
+According to the boxlot, there tend to be more fire outbreak with higher FFMC and DC. When FFMC is between 90 and 95, there exist a high risk of forest fire. The chart of DMC and ISI is slightly right skewed. When the value of DMC is aroung 100, or the value of ISI is around 10, there is a high risk of forest fire.
+```{r}
+FFMC_count <- ggplot(
+  forest_fire, 
+  aes(FFMC)
+  ) + 
+  geom_boxplot() + 
+  labs(y='count', 
+       x='FFMC', 
+       title='Relationship between FFMC and fire') 
+
+DMC_count <- ggplot(
+  forest_fire, 
+  aes(DMC)
+  ) + 
+  geom_boxplot() +  
+  labs(y='count', 
+       x='DMC', 
+       title='relationship between DMC and fire')
+
+
+DC_count <- ggplot(
+  forest_fire, 
+  aes(DC)
+  ) + 
+  geom_boxplot() +  
+  labs(y='count', 
+       x='DC', 
+       title='relationship between DC and fire') 
+
+
+ISI_count <- ggplot(
+  forest_fire, 
+  aes(ISI)
+  ) + 
+  geom_boxplot() +  
+  labs(y='count', 
+       x='ISI', 
+       title='relationship between ISI and fire') 
+
+grid.arrange(FFMC_count,DMC_count,DC_count,ISI_count,ncol=2, nrow=2)
+```
